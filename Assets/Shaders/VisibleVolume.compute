@@ -1,0 +1,40 @@
+#pragma kernel CSMain
+
+Texture2D<float> _DepthTex;
+RWStructuredBuffer<uint> _VolumeResult; // Use uint buffer
+#define SCALE 1000000.0
+
+float4x4 _InvProjMatrix;
+float4x4 _InvViewMatrix;
+float3 _CameraWorldPos;
+float2 _TexSize; // (width, height)
+float _CameraFar; // Camera far clipping plane
+float _CameraFOV; // Camera Field of View (vertical FOV)
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TexSize.x || id.y >= _TexSize.y)
+        return;
+
+    float2 uv = (id.xy + 0.5) / _TexSize;
+
+    float depth = _DepthTex.Load(int3(id.xy, 0));
+
+    float height = depth * _CameraFar; // Scale by camera's far plane to get the real-world depth
+
+    // Compute the base size based on camera's FOV and the pixel's position
+    float2 pixelSize = 2.0f / _TexSize; // Size of a pixel in normalized device coordinates
+    float fovFactor = tan(radians(_CameraFOV) * 0.5f) * 2.0f; // FOV scaling factor
+    float baseWidth = fovFactor * height * pixelSize.x; // Base width of the pyramid at this depth
+    float baseHeight = fovFactor * height * pixelSize.y; // Base height of the pyramid at this depth
+
+    // Volume of the pyramid: V = (1/3) * baseArea * height
+    float baseArea = baseWidth * baseHeight;
+    float pyramidVolume = (1.0f / 3.0f) * baseArea * height;
+
+    uint scaledVol = (uint) (pyramidVolume * SCALE);
+    InterlockedAdd(_VolumeResult[0], scaledVol);
+    
+    
+}
